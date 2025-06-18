@@ -1,0 +1,13 @@
+# Environment
+.env
+.venv
+venv/
+__pycache__/
+
+# IDE/Editor specific
+.idea/
+.vscode/
+
+# macOS/Windows specific
+.DS_Store
+Thumbs.db
