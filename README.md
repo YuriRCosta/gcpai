@@ -13,7 +13,7 @@ Este script utiliza a API da OpenAI para gerar mensagens de commit e nomes de br
 
    ```bash
    git clone [git@github.com:YuriRCosta/gcpai.git](git@github.com:YuriRCosta/gcpai.git)
-   cd SEU_REPOSITORIO
+   cd gcpai
    ```
 
 2. (Opcional, mas recomendado) Crie e ative um ambiente virtual:
