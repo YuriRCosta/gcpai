@@ -3,6 +3,7 @@
 import subprocess
 import os
 import argparse
+import webbrowser
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -109,9 +110,27 @@ def user_interaction_loop(prompt_question, generation_function, diff):
         else:
             return None
 
+def get_pr_url(branch_name):
+    try:
+        remote_url = run_git_command(["git", "config", "--get", "remote.origin.url"])
+        if not remote_url:
+            return None
+
+        if remote_url.startswith("https://"):
+            repo_path = remote_url.replace("https://github.com/", "").replace(".git", "")
+        elif remote_url.startswith("git@"):
+            repo_path = remote_url.replace("git@github.com:", "").replace(".git", "")
+        else:
+            return None
+
+        return f"https://github.com/{repo_path}/pull/new/{branch_name}"
+    except Exception:
+        return None
+
 def main():
     parser = argparse.ArgumentParser(description="Generates commits and branches with AI.")
     parser.add_argument("--branch", "-b", action="store_true", help="Request the generation of a branch name.")
+    parser.add_argument("--pr", action="store_true", help="Open a pull request in the browser after a successful push.")
     args = parser.parse_args()
 
     if not os.getenv("OPENAI_API_KEY"):
@@ -161,7 +180,7 @@ def main():
         else:
             print(f"   Branch: {branch_to_commit_on} (current)")
 
-            confirmation = input("\n✅ Proceed with commit and push? (Y/n): ").strip().lower()
+        confirmation = input("\n✅ Proceed with commit and push? (Y/n): ").strip().lower()
 
         if confirmation in ('y', ''):
             print("💾 Committing...")
@@ -174,7 +193,16 @@ def main():
                 run_git_command(["git", "push", "--set-upstream", "origin", branch_to_push])
             else:
                 run_git_command(["git", "push", "origin", branch_to_push])
+            
             print("✨ Success!")
+
+            if args.pr:
+                pr_url = get_pr_url(branch_to_push)
+                if pr_url:
+                    open_pr_response = input(f"\n🔗 Would you like to open a Pull Request in your browser? (Y/n): ").strip().lower()
+                    if open_pr_response in ('y', ''):
+                        print(f"🚀 Opening {pr_url}...")
+                        webbrowser.open(pr_url)
         else:
             print("🚫 Operation canceled by the user.")
             if new_branch_created and branch_name != original_branch_name:
