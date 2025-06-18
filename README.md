@@ -21,7 +21,7 @@ This project includes an automated installation script that handles all setup.
 1. **Clone the repository:**
 
    ```bash
-   git clone [https://github.com/YuriRCosta/gcpai.git](https://github.com/YuriRCosta/gcpai.git)
+   git clone https://github.com/YuriRCosta/gcpai.git
    cd gcpai
    ```
 
