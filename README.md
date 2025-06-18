@@ -54,7 +54,7 @@ The main command is `gcpai`. You can use flags to customize its behavior.
 ### Examples
 
 **1. Generate a commit message:**
-Simply run the command after staging your files (`git add .`).
+Simply run the command. It's already add (`git add .`) when you run this command.
 
 ```bash
 gcpai
