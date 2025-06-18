@@ -1,47 +1,83 @@
 # Git AI Assistant
 
-Este script utiliza a API da OpenAI para gerar mensagens de commit e nomes de branch com base nas suas alterações no Git.
+A command-line tool to streamline your Git workflow using AI.
 
-## Pré-requisitos
+## Features
 
-- Python 3.8+
+- ✨ AI-powered suggestions for conventional commit messages.
+- 🌿 Smart generation of descriptive branch names.
+- 🚀 Full workflow automation: stage, commit, push, and optionally open a pull request.
+- 💬 Interactive loop to refine suggestions until they are perfect.
+
+## Prerequisites
+
 - Git
+- Python 3.8+
 
-## Instalação
+## Installation
 
-1. Clone o repositório:
+This project includes an automated installation script that handles all setup.
+
+1. **Clone the repository:**
 
    ```bash
-   git clone [git@github.com:YuriRCosta/gcpai.git](git@github.com:YuriRCosta/gcpai.git)
+   git clone [https://github.com/YuriRCosta/gcpai.git](https://github.com/YuriRCosta/gcpai.git)
    cd gcpai
    ```
 
-2. (Opcional, mas recomendado) Crie e ative um ambiente virtual:
+2. **Run the installation script:**
 
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate
+   ./install.sh
    ```
 
-3. Instale as dependências:
+The script will automatically:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+- Create a local Python virtual environment (`.venv`).
+- Install all the required dependencies into it.
+- Create the `gcpai` command in your system, making it available from any directory.
 
-## Configuração
+Follow any instructions provided by the script, such as adding `~/bin` to your PATH if it's not already configured.
 
-1. Crie um arquivo `.env` na raiz do projeto.
-2. Adicione sua chave da API da OpenAI a este arquivo:
+## Configuration
 
-   ```
-   OPENAI_API_KEY="sua_chave_secreta_da_openai"
-   ```
+After running the `install.sh` script, a `.env` file will be created in the project directory. You just need to open this file and add your OpenAI API key:
 
-## Uso
+    ```
+    OPENAI_API_KEY="your_secret_api_key_here"
+    ```
 
-Certifique-se de que seu script tenha permissão de execução:
+## Usage
+
+The main command is `gcpai`. You can use flags to customize its behavior.
+
+### Examples
+
+**1. Generate a commit message:**
+Simply run the command after staging your files (`git add .`).
 
 ```bash
-chmod +x gcpai.py
+gcpai
 ```
+
+2. Generate a branch name, then a commit message:
+   Use the --branch (or -b) flag.
+
+```bash
+gcpai --branch
+```
+
+3. Full workflow: Branch, Commit, Push, and open PR:
+   Combine the --branch and --pr flags for a complete automated workflow.
+
+```bash
+gcpai -b --pr
+```
+
+Interactive Prompts
+
+The script will ask for your confirmation at various stages.
+
+    Press Enter or y to accept a suggestion.
+    Press r to regenerate a new suggestion.
+    Press n to cancel an action.
