@@ -43,9 +43,7 @@ Follow any instructions provided by the script, such as adding `~/bin` to your P
 
 After running the `install.sh` script, a `.env` file will be created in the project directory. You just need to open this file and add your OpenAI API key:
 
-    ```
     OPENAI_API_KEY="your_secret_api_key_here"
-    ```
 
 ## Usage
 
