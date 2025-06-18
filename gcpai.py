@@ -201,8 +201,12 @@ def main():
                 if pr_url:
                     open_pr_response = input(f"\n🔗 Would you like to open a Pull Request in your browser? (Y/n): ").strip().lower()
                     if open_pr_response in ('y', ''):
-                        print(f"🚀 Opening {pr_url}...")
-                        webbrowser.open(pr_url)
+                        try:
+                            print(f"🚀 Opening PR link in your browser...")
+                            webbrowser.open(pr_url)
+                        except webbrowser.Error:
+                            print(f"⚠️ Could not open the browser automatically.")
+                            print(f"   Please, copy and paste this URL:\n   {pr_url}")
         else:
             print("🚫 Operation canceled by the user.")
             if new_branch_created and branch_name != original_branch_name:
