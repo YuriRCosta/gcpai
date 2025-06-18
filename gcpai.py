@@ -3,7 +3,7 @@
 import subprocess
 import os
 import argparse
-import webbrowser
+import sys
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -110,6 +110,25 @@ def user_interaction_loop(prompt_question, generation_function, diff):
         else:
             return None
 
+def open_in_browser(url):
+    command = []
+    if sys.platform.startswith('linux'):
+        command = ['xdg-open', url]
+    elif sys.platform == 'darwin':
+        command = ['open', url]
+    elif sys.platform == 'win32':
+        command = ['start', url]
+    
+    if not command:
+        return False
+
+    try:
+        # Usamos DEVNULL para suprimir qualquer saída do comando
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
 def get_pr_url(branch_name):
     try:
         remote_url = run_git_command(["git", "config", "--get", "remote.origin.url"])
@@ -201,10 +220,8 @@ def main():
                 if pr_url:
                     open_pr_response = input(f"\n🔗 Would you like to open a Pull Request in your browser? (Y/n): ").strip().lower()
                     if open_pr_response in ('y', ''):
-                        try:
-                            print(f"🚀 Opening PR link in your browser...")
-                            webbrowser.open(pr_url)
-                        except webbrowser.Error:
+                        print(f"🚀 Opening PR link in your browser...")
+                        if not open_in_browser(pr_url):
                             print(f"⚠️ Could not open the browser automatically.")
                             print(f"   Please, copy and paste this URL:\n   {pr_url}")
         else:
