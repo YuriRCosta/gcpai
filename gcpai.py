@@ -29,10 +29,13 @@ def run_git_command(command, check=True):
         print(f"❌ git command not found. Please ensure Git is installed and in your PATH.")
         exit(1)
 
-def get_git_diff():
-    run_git_command(["git", "add", "."])
-    diff = run_git_command(["git", "diff", "--cached"])
-    return diff
+def get_git_diff(staged=True, base_branch=None):
+    if staged:
+        run_git_command(["git", "add", "."])
+        return run_git_command(["git", "diff", "--cached"])
+    elif base_branch:
+        return run_git_command(["git", "diff", f"origin/{base_branch}...HEAD"], check=False)
+    return ""
 
 def get_openai_suggestion(prompt, model="gpt-4o-mini", temperature=0.3):
     try:
@@ -43,12 +46,14 @@ def get_openai_suggestion(prompt, model="gpt-4o-mini", temperature=0.3):
         )
         suggestion = response.choices[0].message.content.strip().replace("`", "")
         
-        # Ensure the description starts with a capital letter
-        parts = suggestion.split(':', 1)
-        if len(parts) == 2:
-            commit_type = parts[0].strip()
-            commit_desc = parts[1].strip()
-            suggestion = f"{commit_type}: {commit_desc.capitalize()}"
+        # Ensure the description starts with a capital letter for commits
+        if ":" in suggestion:
+            parts = suggestion.split(':', 1)
+            if len(parts) == 2:
+                commit_type = parts[0].strip()
+                commit_desc = parts[1].strip()
+                if not commit_desc.startswith("["):
+                    suggestion = f"{commit_type}: {commit_desc.capitalize()}"
             
         return suggestion
     except Exception as e:
@@ -56,6 +61,7 @@ def get_openai_suggestion(prompt, model="gpt-4o-mini", temperature=0.3):
         exit(1)
 
 def generate_commit_message(diff, temperature=0.3, history=None, change_type=None):
+    # This prompt remains the same as before
     if change_type:
         prompt = (
             f"You are an assistant that generates commit messages in the conventional commits format.\n"
@@ -87,7 +93,20 @@ def generate_commit_message(diff, temperature=0.3, history=None, change_type=Non
     prompt += f"\n\nDiff:\n{diff}"
     return get_openai_suggestion(prompt, temperature=temperature)
 
+def generate_pr_title(diff, temperature=0.4):
+    prompt = (
+        "You are an assistant that generates Pull Request titles.\n"
+        "Based on the TOTAL git diff of a branch below, generate a comprehensive and concise PR title in English.\n"
+        "The title should summarize all the changes, not just one part of it.\n"
+        "It should follow the conventional commits format (e.g., 'feat: Add user authentication and profile management').\n"
+        "The description after the type MUST start with a capital letter.\n"
+        "Generate ONLY the title, with no extra explanations or remarks."
+    )
+    prompt += f"\n\nDiff:\n{diff}"
+    return get_openai_suggestion(prompt, temperature=temperature)
+
 def generate_branch_name(diff, temperature=0.5, history=None, change_type=None):
+    # This prompt remains the same as before
     if change_type:
         prompt = (
             f"You are an assistant that generates Git branch names.\n"
@@ -156,9 +175,9 @@ def main():
         print("   Please define it in your .env file or your environment.")
         exit(1)
 
-    diff = get_git_diff()
+    staged_diff = get_git_diff(staged=True)
 
-    if not diff:
+    if not staged_diff:
         print("✅ No staged changes found. Nothing to commit.")
         exit(0)
 
@@ -167,7 +186,7 @@ def main():
     original_branch_name = run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 
     if args.branch:
-        branch_name = user_interaction_loop("Suggested branch name", generate_branch_name, diff, change_type=args.type)
+        branch_name = user_interaction_loop("Suggested branch name", generate_branch_name, staged_diff, change_type=args.type)
         if branch_name:
             if branch_name == original_branch_name:
                 print(f"⚠️ The suggested branch ('{branch_name}') is the same as the current branch. No new branch will be created.")
@@ -186,7 +205,7 @@ def main():
         else:
             print("🚫 Branch creation canceled. Continuing on the current branch.")
 
-    commit_message = user_interaction_loop("Suggested commit message", generate_commit_message, diff, change_type=args.type)
+    commit_message = user_interaction_loop("Suggested commit message", generate_commit_message, staged_diff, change_type=args.type)
 
     if commit_message:
         print(f"\n📝 Commit Review:")
@@ -245,24 +264,25 @@ def main():
                     if default_branch:
                         print(f"ℹ️ Using '{default_branch}' as the base branch for the PR.")
                         
-                        commit_range = f"origin/{default_branch}..HEAD"
+                        full_diff = get_git_diff(staged=False, base_branch=default_branch)
                         
-                        pr_title = run_git_command(["git", "log", commit_range, "--reverse", "--pretty=format:%s", "-n", "1"], check=False)
-                        
-                        if not pr_title:
-                            print("⚠️ Could not find new commits compared to the base branch. Using the last commit as title.")
-                            pr_title = run_git_command(["git", "log", "-1", "--pretty=format:%s"])
+                        if not full_diff:
+                            print("⚠️ No differences found between your branch and the default branch. Cannot generate a PR title.")
+                        else:
+                            print("\n🤖 Generating a comprehensive PR title based on all changes...")
+                            pr_title = generate_pr_title(full_diff)
+                            print(f"💬 Suggested PR Title:\n{pr_title}")
 
-                        commits_list = run_git_command(["git", "log", commit_range, "--pretty=format:- %s"], check=False).splitlines()
-                        if not commits_list:
-                            commits_list = run_git_command(["git", "log", "-1", "--pretty=format:- %s"]).splitlines()
+                            commits_list = run_git_command(["git", "log", f"origin/{default_branch}..HEAD", "--pretty=format:- %s"], check=False).splitlines()
+                            if not commits_list:
+                                commits_list = run_git_command(["git", "log", "-1", "--pretty=format:- %s"]).splitlines()
 
-                        pr_body = "\n".join(["## Commits in this PR"] + commits_list)
+                            pr_body = "\n".join(["## Commits in this PR"] + commits_list)
 
-                        print("🚀 Creating Pull Request...")
-                        pr_command = ['gh', 'pr', 'create', '--title', pr_title, '--body', pr_body]
-                        pr_output = run_git_command(pr_command, check=True)
-                        print(f"✅ Pull Request created successfully:\n{pr_output}")
+                            print("\n🚀 Creating Pull Request...")
+                            pr_command = ['gh', 'pr', 'create', '--title', pr_title, '--body', pr_body]
+                            pr_output = run_git_command(pr_command, check=True)
+                            print(f"✅ Pull Request created successfully:\n{pr_output}")
 
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     print("❌ GitHub CLI (gh) not found or not configured correctly.")
