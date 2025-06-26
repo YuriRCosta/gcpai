@@ -66,7 +66,7 @@ gcpai --branch
 ```
 
 3. Full workflow: Branch, Commit, Push, and open PR:
-   Combine the --branch and -pr flags for a complete automated workflow.
+   Combine the --branch and --pr flags for a complete automated workflow.
 
 ```bash
 gcpai -b --pr
