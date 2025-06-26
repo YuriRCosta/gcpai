@@ -44,45 +44,28 @@ def get_openai_suggestion(prompt, model="gpt-4o-mini", temperature=0.3):
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
         )
-        suggestion = response.choices[0].message.content.strip().replace("`", "")
-        
-        # Ensure the description starts with a capital letter for commits
-        if ":" in suggestion:
-            parts = suggestion.split(':', 1)
-            if len(parts) == 2:
-                commit_type = parts[0].strip()
-                commit_desc = parts[1].strip()
-                if not commit_desc.startswith("["):
-                    suggestion = f"{commit_type}: {commit_desc.capitalize()}"
-            
-        return suggestion
+        return response.choices[0].message.content.strip().replace("`", "")
     except Exception as e:
         print(f"❌ Error with OpenAI API: {e}")
         exit(1)
 
 def generate_commit_message(diff, temperature=0.3, history=None, change_type=None):
-    # This prompt remains the same as before
     if change_type:
         prompt = (
             f"You are an assistant that generates commit messages in the conventional commits format.\n"
             f"Based on the git diff below, generate a short, clear commit message in English.\n"
             f"The commit message must start with '{change_type}: '.\n"
-            f"The description after the type MUST start with a capital letter.\n"
-            f"Example: {change_type}: Describe the change.\n"
-            f"Only the message, with no extra explanations or remarks.\n"
-            f"Generate ONLY ONE commit message, with no line breaks or special formatting.\n"
-            f"Nothing but a commit message."
+            f"The ENTIRE message MUST be in LOWERCASE.\n"
+            f"Example: {change_type}: describe the change in lowercase.\n"
+            f"Only the message, with no extra explanations or remarks."
         )
     else:
         prompt = (
             "You are an assistant that generates commit messages in the conventional commits format.\n"
-            "Based on the git diff below, identify the MOST SIGNIFICANT change and generate a short, clear commit message in English about it.\n"
-            "Focus on the main purpose of the change.\n"
-            "Use prefixes like feat, fix, chore, refactor, test, docs, style, perf, ci, build, revert etc.\n"
-            "The description after the type MUST start with a capital letter.\n"
-            "Only the message, with no extra explanations or remarks.\n"
-            "Generate ONLY ONE commit message, with no line breaks or special formatting.\n"
-            "Nothing but a commit message."
+            "Based on the git diff below, generate a short, clear commit message in English.\n"
+            "Use prefixes like feat, fix, chore, refactor, test, docs, style, perf, ci, build, revert.\n"
+            "The ENTIRE message MUST be in LOWERCASE.\n"
+            "Only the message, with no extra explanations or remarks."
         )
 
     if history:
@@ -91,19 +74,31 @@ def generate_commit_message(diff, temperature=0.3, history=None, change_type=Non
         prompt += history_prompt
 
     prompt += f"\n\nDiff:\n{diff}"
-    return get_openai_suggestion(prompt, temperature=temperature)
+    # Force lowercase for the final commit message
+    return get_openai_suggestion(prompt, temperature=temperature).lower()
 
 def generate_pr_title(diff, temperature=0.4):
     prompt = (
-        "You are an assistant that generates Pull Request titles.\n"
+        "You are an assistant that generates Pull Request titles in the conventional commits format.\n"
         "Based on the TOTAL git diff of a branch below, generate a comprehensive and concise PR title in English.\n"
         "The title should summarize all the changes, not just one part of it.\n"
-        "It should follow the conventional commits format (e.g., 'feat: Add user authentication and profile management').\n"
+        "Use a lowercase type prefix (e.g., 'feat:').\n"
         "The description after the type MUST start with a capital letter.\n"
+        "Example: feat: Add user authentication and profile management.\n"
         "Generate ONLY the title, with no extra explanations or remarks."
     )
     prompt += f"\n\nDiff:\n{diff}"
-    return get_openai_suggestion(prompt, temperature=temperature)
+    
+    suggestion = get_openai_suggestion(prompt, temperature=temperature)
+    
+    # Capitalize description for PR title
+    parts = suggestion.split(':', 1)
+    if len(parts) == 2:
+        pr_type = parts[0].strip().lower() # Ensure type is lowercase
+        pr_desc = parts[1].strip()
+        suggestion = f"{pr_type}: {pr_desc.capitalize()}"
+
+    return suggestion
 
 def generate_branch_name(diff, temperature=0.5, history=None, change_type=None):
     # This prompt remains the same as before
@@ -118,7 +113,7 @@ def generate_branch_name(diff, temperature=0.5, history=None, change_type=None):
     else:
         prompt = (
             "You are an assistant that generates Git branch names.\n"
-            "Based on the git diff below, identify the MOST SIGNIFICANT change and generate a short, descriptive branch name in English for it, "
+            "Based on the git diff below, generate a short, descriptive branch name in English for it, "
             "using hyphens to separate words and following the 'type/short-description' format.\n"
             "The name should reflect the main purpose of the changes.\n"
             "Use prefixes like feat/, fix/, chore/, refactor/, test/, docs/, style/, perf/, ci/, build/, revert/.\n"
@@ -135,6 +130,7 @@ def generate_branch_name(diff, temperature=0.5, history=None, change_type=None):
     return get_openai_suggestion(prompt, temperature=temperature)
 
 def user_interaction_loop(prompt_question, generation_function, diff, change_type=None):
+    # This function remains the same
     if "branch" in prompt_question.lower():
         suggested_temperature = 0.5
     else:
@@ -142,12 +138,18 @@ def user_interaction_loop(prompt_question, generation_function, diff, change_typ
 
     previous_suggestions = []
     while True:
-        suggestion = generation_function(
-            diff,
-            temperature=suggested_temperature,
-            history=previous_suggestions,
-            change_type=change_type
-        )
+        # For PR title, we don't need the full loop, but we call the generation function directly.
+        # This loop is for commit and branch names.
+        if 'change_type' in locals() or 'change_type' in globals():
+             suggestion = generation_function(
+                diff,
+                temperature=suggested_temperature,
+                history=previous_suggestions,
+                change_type=change_type
+            )
+        else:
+            suggestion = generation_function(diff, temperature=suggested_temperature)
+
         print(f"\n💬 {prompt_question}:\n{suggestion}")
 
         response = input("    ➡️ Accept? (Y) | 🔄 Regenerate? (r) | 🚫 Cancel? (n): ").strip().lower()
