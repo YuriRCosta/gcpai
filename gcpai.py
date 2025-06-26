@@ -41,7 +41,16 @@ def get_openai_suggestion(prompt, model="gpt-4o-mini", temperature=0.3):
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
         )
-        return response.choices[0].message.content.strip().replace("`", "")
+        suggestion = response.choices[0].message.content.strip().replace("`", "")
+        
+        # Ensure the description starts with a capital letter
+        parts = suggestion.split(':', 1)
+        if len(parts) == 2:
+            commit_type = parts[0].strip()
+            commit_desc = parts[1].strip()
+            suggestion = f"{commit_type}: {commit_desc.capitalize()}"
+            
+        return suggestion
     except Exception as e:
         print(f"❌ Error with OpenAI API: {e}")
         exit(1)
@@ -52,7 +61,8 @@ def generate_commit_message(diff, temperature=0.3, history=None, change_type=Non
             f"You are an assistant that generates commit messages in the conventional commits format.\n"
             f"Based on the git diff below, generate a short, clear commit message in English.\n"
             f"The commit message must start with '{change_type}: '.\n"
-            f"Example: {change_type}: describe the change.\n"
+            f"The description after the type MUST start with a capital letter.\n"
+            f"Example: {change_type}: Describe the change.\n"
             f"Only the message, with no extra explanations or remarks.\n"
             f"Generate ONLY ONE commit message, with no line breaks or special formatting.\n"
             f"Nothing but a commit message."
@@ -63,6 +73,7 @@ def generate_commit_message(diff, temperature=0.3, history=None, change_type=Non
             "Based on the git diff below, identify the MOST SIGNIFICANT change and generate a short, clear commit message in English about it.\n"
             "Focus on the main purpose of the change.\n"
             "Use prefixes like feat, fix, chore, refactor, test, docs, style, perf, ci, build, revert etc.\n"
+            "The description after the type MUST start with a capital letter.\n"
             "Only the message, with no extra explanations or remarks.\n"
             "Generate ONLY ONE commit message, with no line breaks or special formatting.\n"
             "Nothing but a commit message."
@@ -136,7 +147,7 @@ def user_interaction_loop(prompt_question, generation_function, diff, change_typ
 def main():
     parser = argparse.ArgumentParser(description="Generates commits and branches with AI.")
     parser.add_argument("--branch", "-b", action="store_true", help="Request the generation of a branch name.")
-    parser.add_argument("-pr", action="store_true", help="Create a pull request on GitHub after a successful push.")
+    parser.add_argument("--pr", action="store_true", help="Create a pull request on GitHub after a successful push.")
     parser.add_argument("--type", "-t", type=str, choices=['feat', 'fix'], help="Specify the type of change (feat or fix).")
     args = parser.parse_args()
 
@@ -208,9 +219,51 @@ def main():
                 try:
                     run_git_command(['gh', '--version'], check=True)
                     print("✅ GitHub CLI is installed.")
-                    print("🚀 Creating Pull Request...")
-                    pr_output = run_git_command(['gh', 'pr', 'create', '--fill'], check=True)
-                    print(f"✅ Pull Request created successfully:\n{pr_output}")
+                    
+                    default_branch = ""
+                    try:
+                        head_branch_output = run_git_command(["git", "remote", "show", "origin"])
+                        for line in head_branch_output.splitlines():
+                            if 'HEAD branch' in line:
+                                default_branch = line.split(':')[1].strip()
+                                break
+                    except (subprocess.CalledProcessError, IndexError):
+                        pass
+
+                    if not default_branch:
+                        print("⚠️ Could not automatically determine the default branch. Trying 'main' and 'master'.")
+                        try:
+                            run_git_command(["git", "show-ref", "--verify", "refs/remotes/origin/main"])
+                            default_branch = "main"
+                        except subprocess.CalledProcessError:
+                            try:
+                                run_git_command(["git", "show-ref", "--verify", "refs/remotes/origin/master"])
+                                default_branch = "master"
+                            except subprocess.CalledProcessError:
+                                print("❌ Could not determine the default branch. Please create the PR manually.")
+                                
+                    if default_branch:
+                        print(f"ℹ️ Using '{default_branch}' as the base branch for the PR.")
+                        
+                        commit_range = f"origin/{default_branch}..HEAD"
+                        
+                        pr_title = run_git_command(["git", "log", commit_range, "--reverse", "--pretty=format:%s", "-n", "1"], check=False)
+                        
+                        if not pr_title:
+                            print("⚠️ Could not find new commits compared to the base branch. Using the last commit as title.")
+                            pr_title = run_git_command(["git", "log", "-1", "--pretty=format:%s"])
+
+                        commits_list = run_git_command(["git", "log", commit_range, "--pretty=format:- %s"], check=False).splitlines()
+                        if not commits_list:
+                            commits_list = run_git_command(["git", "log", "-1", "--pretty=format:- %s"]).splitlines()
+
+                        pr_body = "\n".join(["## Commits in this PR"] + commits_list)
+
+                        print("🚀 Creating Pull Request...")
+                        pr_command = ['gh', 'pr', 'create', '--title', pr_title, '--body', pr_body]
+                        pr_output = run_git_command(pr_command, check=True)
+                        print(f"✅ Pull Request created successfully:\n{pr_output}")
+
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     print("❌ GitHub CLI (gh) not found or not configured correctly.")
                     print("   Please install it and authenticate with `gh auth login` to use the --pr feature.")
