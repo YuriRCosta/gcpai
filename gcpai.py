@@ -160,7 +160,7 @@ def user_interaction_loop(prompt_question, generation_function, diff, **kwargs):
             history=previous_suggestions,
             **kwargs
         )
-        print(f"\n💬 {prompt_question}:\n{suggestion}")
+        print(f"\n{prompt_question}:\n{suggestion}")
 
         response = input("    ➡️ Accept? (Y) | 🔄 Regenerate? (r) | 🚫 Cancel? (n): ").strip().lower()
 
@@ -170,16 +170,14 @@ def user_interaction_loop(prompt_question, generation_function, diff, **kwargs):
             if suggestion:
                 previous_suggestions.append(suggestion)
             suggested_temperature = min(1.0, suggested_temperature + 0.2)
-            print(f"ℹ️ Trying a different suggestion (temperature: {suggested_temperature:.1f})...")
+            print("🔄 Regenerating...")
             continue
         else:
             return None
 
 def create_pull_request(change_type=None):
-    print("\n🔄 Checking for GitHub CLI (gh)...")
     try:
         run_git_command(['gh', '--version'], check=True)
-        print("✅ GitHub CLI is installed.")
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("❌ GitHub CLI (gh) not found or not configured correctly.")
         return
@@ -207,11 +205,10 @@ def create_pull_request(change_type=None):
         print("❌ Could not determine the default branch. Please create the PR manually.")
         return
 
-    print(f"ℹ️ Using '{default_branch}' as the base branch for the PR.")
     full_diff = get_git_diff(staged=False, base_branch=default_branch)
 
     if not full_diff:
-        print("✅ No differences found between your branch and the default branch. Nothing to create a PR for.")
+        print("✅ No differences found to create a PR.")
         return
 
     if not change_type:
@@ -237,14 +234,13 @@ def create_pull_request(change_type=None):
         if title_prefix in ['feat', 'fix']:
             body_change_type = title_prefix
 
-    print("\n🤖 Generating a comprehensive PR description...")
+    print("🤖 Generating PR description...")
     pr_body = generate_pr_body(full_diff, body_change_type)
-    print("✅ PR description generated.")
 
-    print("\n🚀 Creating Pull Request...")
+    print("🚀 Creating PR...")
     pr_command = ['gh', 'pr', 'create', '--title', pr_title, '--body', pr_body]
     pr_output = run_git_command(pr_command, check=True)
-    print(f"✅ Pull Request created successfully:\n{pr_output}")
+    print(f"✅ PR created: {pr_output}")
 
 def main():
     parser = argparse.ArgumentParser(description="Generates commits and branches with AI.")
@@ -280,7 +276,7 @@ def main():
             if branch_name and branch_name != original_branch_name:
                 run_git_command(["git", "checkout", "-b", branch_name], check=False)
                 new_branch_created = True
-                print(f"✅ Switched to new branch '{branch_name}'.")
+                print(f"✅ Switched to '{branch_name}'.")
             elif not branch_name:
                 print("🚫 Branch creation canceled.")
 
@@ -290,23 +286,23 @@ def main():
             print("💾 Committing...")
             run_git_command(["git", "commit", "-m", commit_message])
             branch_to_push = run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-            print(f"🚀 Pushing to branch '{branch_to_push}'...")
+            print(f"🚀 Pushing to '{branch_to_push}'...")
             run_git_command(["git", "push", "--set-upstream", "origin", branch_to_push])
-            print("✨ Success!")
+            print("✅ Pushed successfully.")
 
             if args.pr:
                 create_pull_request(change_type)
         else:
             print("🚫 Commit canceled.")
             if new_branch_created:
-                go_back = input(f"❓ Return to original branch '{original_branch_name}'? (y/N): ").strip().lower()
+                go_back = input(f"❓ Return to '{original_branch_name}'? (y/N): ").strip().lower()
                 if go_back == 'y':
                     run_git_command(["git", "checkout", original_branch_name])
     elif args.pr:
-        print("ℹ️ No staged changes. Proceeding to create a Pull Request for existing commits.")
+        print("ℹ️ No staged changes. Creating PR from existing commits.")
         create_pull_request()
     else:
-        print("✅ No staged changes found. Nothing to commit.")
+        print("✅ No staged changes.")
 
 if __name__ == "__main__":
     try:
