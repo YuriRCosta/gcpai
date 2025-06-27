@@ -6,6 +6,8 @@ import argparse
 import sys
 from openai import OpenAI
 from dotenv import load_dotenv
+from InquirerPy import inquirer
+from InquirerPy.base.control import Choice
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -31,10 +33,9 @@ def run_git_command(command, check=True):
 
 def get_git_diff(staged=True, base_branch=None):
     if staged:
-        # No need to run git add here, it should be done before calling
         return run_git_command(["git", "diff", "--cached"])
     elif base_branch:
-        run_git_command(["git", "fetch", "origin", base_branch], check=False) # Update remote info
+        run_git_command(["git", "fetch", "origin", base_branch], check=False)
         return run_git_command(["git", "diff", f"origin/{base_branch}...HEAD"], check=False)
     return ""
 
@@ -58,6 +59,8 @@ def generate_commit_message(diff, temperature=0.3, history=None, change_type=Non
         f"Example: {change_type or 'feat'}: describe the change in lowercase.\n"
         f"Only the message, with no extra explanations or remarks."
     )
+    if change_type:
+        prompt = prompt.replace("{change_type or 'feat'}", change_type)
 
     if history:
         prompt += "\n\nCrucially, provide a different and unique suggestion from the ones I have already rejected:\n- " + "\n- ".join(history)
@@ -87,9 +90,62 @@ def generate_pr_title(diff, temperature=0.4, history=None, **kwargs):
         return f"{pr_type}: {pr_desc.capitalize()}"
     return suggestion
 
+def generate_pr_body(diff, change_type, temperature=0.5):
+    prompt = f"""Você é um Engenheiro de Software Sênior encarregado de redigir descrições de Pull Requests (PRs) de forma clara, técnica e profissional.
+
+Sua tarefa é gerar uma descrição de PR completa em formato Markdown, baseada no tipo de alteração e no diff de código fornecidos.
+
+### Tipo de Alteração:
+{change_type}
+
+### Diff do Código:
+```diff
+{diff}
+```
+
+### Estrutura da Descrição do PR (use exatamente este formato):
+
+## Correção/Feature
+(Resuma em uma frase o que foi corrigido ou implementado.)
+
+## Descrição do Problema
+(Descreva o cenário anterior à mudança: o que estava quebrado, ausente ou poderia ser melhorado?)
+
+## Solução Implementada
+(Explique as alterações técnicas de forma clara. Detalhe a nova lógica, as camadas modificadas (controllers, services, etc.) e quaisquer refatorações importantes.)
+
+## Impacto Esperado
+(Descreva o resultado esperado após a implementação. Como a solução resolve o problema e qual o comportamento esperado em produção?)
+
+### Instruções Importantes:
+- Escreva sempre em português do Brasil.
+- Seja objetivo e técnico, mas evite jargões desnecessários.
+- Não use blockquotes (>) ou emoticons.
+- O resultado final deve ser um documento Markdown limpo e bem formatado."""
+    return get_openai_suggestion(prompt, model="gpt-4o-mini", temperature=temperature)
+
 def generate_branch_name(diff, temperature=0.5, history=None, change_type=None):
-    # This function remains the same
-    pass # Placeholder for brevity
+    prompt = (
+        "You are an assistant that generates Git branch names.\n"
+        "Based on the git diff below, generate a short and descriptive branch name in English.\n"
+        "The branch name MUST follow the format: type/short-description-in-kebab-case.\n"
+    )
+    if change_type:
+        prompt += f"The type MUST be '{change_type}'.\n"
+        prompt += f"Example: {change_type}/add-user-authentication.\n"
+    else:
+        prompt += "Infer the type from the diff. Use one of the following types: 'feat', 'fix', 'chore', 'docs', 'refactor', 'style', 'test'.\n"
+        prompt += "Example: feat/add-user-authentication.\n"
+
+    prompt += "Generate ONLY the branch name, with no extra explanations or remarks."
+
+    if history:
+        prompt += "\n\nCrucially, provide a different and unique suggestion from the ones I have already rejected:\n- " + "\n- ".join(history)
+
+    prompt += f"\n\nDiff:\n{diff}"
+    
+    suggestion = get_openai_suggestion(prompt, temperature=temperature)
+    return suggestion.strip()
 
 def user_interaction_loop(prompt_question, generation_function, diff, **kwargs):
     suggested_temperature = 0.5 if "branch" in prompt_question.lower() else 0.3
@@ -116,14 +172,13 @@ def user_interaction_loop(prompt_question, generation_function, diff, **kwargs):
         else:
             return None
 
-def create_pull_request():
+def create_pull_request(change_type=None):
     print("\n🔄 Checking for GitHub CLI (gh)...")
     try:
         run_git_command(['gh', '--version'], check=True)
         print("✅ GitHub CLI is installed.")
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("❌ GitHub CLI (gh) not found or not configured correctly.")
-        print("   Please install it and authenticate with `gh auth login` to use the --pr feature.")
         return
 
     default_branch = ""
@@ -156,14 +211,25 @@ def create_pull_request():
         print("✅ No differences found between your branch and the default branch. Nothing to create a PR for.")
         return
 
-    pr_title = user_interaction_loop("Suggested PR Title", generate_pr_title, full_diff)
+    if not change_type:
+        change_type = inquirer.select(
+            message="Select the type of change for the PR:",
+            choices=[
+                Choice(value="feat", name="feat - A new feature"),
+                Choice(value="fix", name="fix - A bug fix"),
+            ],
+            default="feat",
+            vi_mode=True,
+        ).execute()
 
+    pr_title = user_interaction_loop("Suggested PR Title", generate_pr_title, full_diff)
     if not pr_title:
-        print("🚫 PR creation canceled by user.")
+        print("🚫 PR title generation canceled.")
         return
 
-    commits_list = run_git_command(["git", "log", f"origin/{default_branch}..HEAD", "--pretty=format:- %s"], check=False).splitlines()
-    pr_body = "\n".join(["## Commits in this PR"] + commits_list)
+    print("\n🤖 Generating a comprehensive PR description...")
+    pr_body = generate_pr_body(full_diff, change_type)
+    print("✅ PR description generated.")
 
     print("\n🚀 Creating Pull Request...")
     pr_command = ['gh', 'pr', 'create', '--title', pr_title, '--body', pr_body]
@@ -174,7 +240,6 @@ def main():
     parser = argparse.ArgumentParser(description="Generates commits and branches with AI.")
     parser.add_argument("--branch", "-b", action="store_true", help="Request the generation of a branch name.")
     parser.add_argument("--pr", action="store_true", help="Create a pull request on GitHub.")
-    parser.add_argument("--type", "-t", type=str, choices=['feat', 'fix'], help="Specify the type of change (feat or fix).")
     args = parser.parse_args()
 
     if not os.getenv("OPENAI_API_KEY"):
@@ -184,49 +249,54 @@ def main():
     run_git_command(["git", "add", "."])
     staged_diff = get_git_diff(staged=True)
 
-    if not staged_diff:
-        if args.pr:
-            print("ℹ️ No staged changes. Proceeding to create a Pull Request for existing commits.")
-            create_pull_request()
-            exit(0)
-        else:
-            print("✅ No staged changes found. Nothing to commit.")
-            exit(0)
+    change_type = None
+    if staged_diff:
+        change_type = inquirer.select(
+            message="Select the type of change:",
+            choices=[
+                Choice(value=None, name="auto - Let AI detect the type"),
+                Choice(value="feat", name="feat - A new feature"),
+                Choice(value="fix", name="fix - A bug fix"),
+            ],
+            default=None,
+            vi_mode=True,
+        ).execute()
 
-    # Branching and committing logic
-    original_branch_name = run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    new_branch_created = False
-    if args.branch:
-        branch_name = user_interaction_loop("Suggested branch name", generate_branch_name, staged_diff, change_type=args.type)
-        if branch_name:
-            if branch_name != original_branch_name:
+        # Branching and committing logic
+        original_branch_name = run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        new_branch_created = False
+        if args.branch:
+            branch_name = user_interaction_loop("Suggested branch name", generate_branch_name, staged_diff, change_type=change_type)
+            if branch_name and branch_name != original_branch_name:
                 run_git_command(["git", "checkout", "-b", branch_name], check=False)
                 new_branch_created = True
                 print(f"✅ Switched to new branch '{branch_name}'.")
-            else:
-                 print(f"⚠️ Already on branch '{branch_name}'.")
+            elif not branch_name:
+                print("🚫 Branch creation canceled.")
+
+        commit_message = user_interaction_loop("Suggested commit message", generate_commit_message, staged_diff, change_type=change_type)
+
+        if commit_message:
+            print("💾 Committing...")
+            run_git_command(["git", "commit", "-m", commit_message])
+            branch_to_push = run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+            print(f"🚀 Pushing to branch '{branch_to_push}'...")
+            run_git_command(["git", "push", "--set-upstream", "origin", branch_to_push])
+            print("✨ Success!")
+
+            if args.pr:
+                create_pull_request(change_type)
         else:
-            print("🚫 Branch creation canceled.")
-
-    commit_message = user_interaction_loop("Suggested commit message", generate_commit_message, staged_diff, change_type=args.type)
-
-    if commit_message:
-        print("💾 Committing...")
-        run_git_command(["git", "commit", "-m", commit_message])
-        branch_to_push = run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-        print(f"🚀 Pushing to branch '{branch_to_push}'...")
-        run_git_command(["git", "push", "--set-upstream", "origin", branch_to_push])
-        print("✨ Success!")
-
-        if args.pr:
-            create_pull_request()
+            print("🚫 Commit canceled.")
+            if new_branch_created:
+                go_back = input(f"❓ Return to original branch '{original_branch_name}'? (y/N): ").strip().lower()
+                if go_back == 'y':
+                    run_git_command(["git", "checkout", original_branch_name])
+    elif args.pr:
+        print("ℹ️ No staged changes. Proceeding to create a Pull Request for existing commits.")
+        create_pull_request()
     else:
-        print("🚫 Commit canceled.")
-        # Logic to checkout back to original branch if needed
-        if new_branch_created:
-            go_back = input(f"❓ Return to original branch '{original_branch_name}'? (y/N): ").strip().lower()
-            if go_back == 'y':
-                run_git_command(["git", "checkout", original_branch_name])
+        print("✅ No staged changes found. Nothing to commit.")
 
 if __name__ == "__main__":
     try:
