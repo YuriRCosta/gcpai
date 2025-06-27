@@ -91,21 +91,29 @@ def generate_pr_title(diff, temperature=0.4, history=None, **kwargs):
     return suggestion
 
 def generate_pr_body(diff, change_type, temperature=0.5):
-    prompt = f"""Você é um Engenheiro de Software Sênior encarregado de redigir descrições de Pull Requests (PRs) de forma clara, técnica e profissional.
+    pr_section_title = "Feature" if change_type == 'feat' else "Correção"
+    prompt = f"""**Sua Tarefa:**
+Você é um Engenheiro de Software Sênior e sua tarefa é gerar uma descrição de Pull Request (PR) completa, técnica e profissional em formato Markdown.
 
-Sua tarefa é gerar uma descrição de PR completa em formato Markdown, baseada no tipo de alteração e no diff de código fornecidos.
+**Instruções:**
+- A descrição deve ser baseada no tipo de alteração e no diff de código fornecidos.
+- Escreva sempre em português do Brasil.
+- Seja objetivo e técnico, mas evite jargões desnecessários.
+- O resultado final deve ser um documento Markdown limpo e bem formatado.
+- NÃO inclua as instruções, o tipo de alteração ou o diff do código na sua resposta final.
+- O resultado DEVE começar diretamente com o cabeçalho da primeira seção (`## {pr_section_title}`), sem nenhum texto, ```markdown``` ou qualquer outra marcação antes dele.
 
-### Tipo de Alteração:
+**Tipo de Alteração:**
 {change_type}
 
-### Diff do Código:
+**Diff do Código:**
 ```diff
 {diff}
 ```
 
-### Estrutura da Descrição do PR (use exatamente este formato):
+**Estrutura da Descrição do PR (use exatamente este formato):**
 
-## Correção/Feature
+## {pr_section_title}
 (Resuma em uma frase o que foi corrigido ou implementado.)
 
 ## Descrição do Problema
@@ -116,12 +124,7 @@ Sua tarefa é gerar uma descrição de PR completa em formato Markdown, baseada 
 
 ## Impacto Esperado
 (Descreva o resultado esperado após a implementação. Como a solução resolve o problema e qual o comportamento esperado em produção?)
-
-### Instruções Importantes:
-- Escreva sempre em português do Brasil.
-- Seja objetivo e técnico, mas evite jargões desnecessários.
-- Não use blockquotes (>) ou emoticons.
-- O resultado final deve ser um documento Markdown limpo e bem formatado."""
+"""
     return get_openai_suggestion(prompt, model="gpt-4o-mini", temperature=temperature)
 
 def generate_branch_name(diff, temperature=0.5, history=None, change_type=None):
