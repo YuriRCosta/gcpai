@@ -230,8 +230,15 @@ def create_pull_request(change_type=None):
         print("🚫 PR title generation canceled.")
         return
 
+    # Extract change type from the final PR title to ensure consistency
+    body_change_type = change_type
+    if ':' in pr_title:
+        title_prefix = pr_title.split(':', 1)[0].strip().lower()
+        if title_prefix in ['feat', 'fix']:
+            body_change_type = title_prefix
+
     print("\n🤖 Generating a comprehensive PR description...")
-    pr_body = generate_pr_body(full_diff, change_type)
+    pr_body = generate_pr_body(full_diff, body_change_type)
     print("✅ PR description generated.")
 
     print("\n🚀 Creating Pull Request...")
